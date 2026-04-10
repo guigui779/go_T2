@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>V4 管理后台</title>
+  <link rel="stylesheet" href="/admin.css">
+</head>
+
+<body>
+  <div class="container">
+
+    <div class="card" style="padding:14px 24px">
+      <div class="hd">V4 管理后台</div>
+      <div class="hd-sub">配置保存后实时生效</div>
+    </div>
+
+    <div class="card">
+      <div class="sec">中继配置</div>
+      <div class="row">
+        <div class="g">
+          <label>主域名（每行一个）</label>
+          <textarea id="f_main" rows="3" placeholder="fook.pro"></textarea>
+          <div class="nt">客户访问时 302 跳到随机中继子域名。</div>
+        </div>
+        <div class="g">
+          <label>中继泛域名（每行一个）</label>
+          <textarea id="f_relay" rows="3" placeholder="fook.pro"></textarea>
+          <div class="nt">*.泛域名 需 DNS 泛解析指向服务器。</div>
+        </div>
+      </div>
+      <div class="g" style="max-width:200px">
+        <label>随机前缀长度</label>
+        <input id="f_rlen" type="number" min="2" max="16" value="4">
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="sec">落地配置</div>
+      <div class="row">
+        <div>
+          <div class="g">
+            <label>站点名称</label>
+            <input id="f_name" type="text" placeholder="A 站">
+          </div>
+          <div class="tg">
+            <label>通配模式</label>
+            <label class="sw"><input type="checkbox" id="f_wc" checked><span></span></label>
+            <span class="nt" style="margin:0">开=随机子域名 关=固定列表</span>
+          </div>
+          <div id="z_wc">
+            <div class="g">
+              <label>落地基础域名</label>
+              <input id="f_base" type="text" placeholder="example.com">
+              <div class="nt">生成 随机.此域名 作为候选落地地址。</div>
+            </div>
+            <div class="row2">
+              <div class="g"><label>候选数量</label><input id="f_cnt" type="number" min="1" max="50"></div>
+              <div class="g"><label>前缀长度</label><input id="f_plen" type="number" min="3" max="32"></div>
+            </div>
+          </div>
+          <div class="g">
+            <label>命中阈值</label>
+            <input id="f_thr" type="number" min="1" max="20" placeholder="10" title="探测资源中命中几个算域名可用">
+            <div class="nt">探测资源中命中几个算域名可用。</div>
+          </div>
+        </div>
+        <div>
+          <div class="g">
+            <label>探测资源路径（每行一个）</label>
+            <textarea id="f_assets" rows="4" placeholder="/logo.png&#10;/favicon.ico"></textarea>
+            <div class="nt">落地站特有资源，用于判断域名存活。</div>
+          </div>
+          <div class="g" id="z_pv">
+            <label>域名预览</label>
+            <div class="pv" id="o_pv"></div>
+          </div>
+          <div class="g X" id="z_fd">
+            <label>固定域名列表（每行一个）</label>
+            <textarea id="f_fixed" rows="4"
+              placeholder="https://app.example.com&#10;https://a.example.com,备用"></textarea>
+            <div class="nt">格式：URL 或 URL,名称</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="padding:14px 24px">
+      <div class="bar">
+        <button class="b b1" id="btn_save">保存配置</button>
+        <button class="b b2" id="btn_load">重新加载</button>
+        <select id="f_gt" class="b b2" style="font-weight:400">
+          <option value="php">PHP (ThinkPHP)</option>
+          <option value="static">纯静态站</option>
+        </select>
+        <button class="b b2" id="btn_gate">生成 Gate 配置</button>
+      </div>
+      <div class="msg" id="o_msg"></div>
+      <div style="margin-top:10px">
+        <span class="fold" id="tog_json">当前配置 JSON</span>
+        <div class="cb X" id="o_json"></div>
+      </div>
+      <div id="z_gate" class="X" style="margin-top:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <label style="font-size:13px;font-weight:600;color:#e4ecff">Nginx Gate 505 配置</label>
+          <button class="b b2" id="btn_cp" style="padding:4px 10px">复制</button>
+        </div>
+        <div class="cb" id="o_gate" style="max-height:400px"></div>
+      </div>
+    </div>
+
+  </div>
+  <script src="/admin.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "updated": "",
+  "siteName": "独立跳转站",
+  "relay": {
+    "mainDomains": [],
+    "relayDomains": [],
+    "labelLength": 4
+  },
+  "wildcard": {
+    "enabled": true,
+    "baseDomain": "",
+    "candidateCount": 6,
+    "labelLength": 8
+  },
+  "probeAssets": ["/logo.png"],
+  "probeAssetThreshold": 2,
+  "domains": []
+}
