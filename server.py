@@ -99,10 +99,10 @@ def build_config():
 def check_auth():
     if not ADMIN_PASS:
         return True
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Basic "):
-        return False
     try:
+        auth = request.headers.get("Authorization", "")
+        if not auth.startswith("Basic "):
+            return False
         u, p = base64.b64decode(auth[6:]).decode().split(":", 1)
         return u == ADMIN_USER and p == ADMIN_PASS
     except Exception:
@@ -116,7 +116,7 @@ def need_auth():
 # ── 页面 ──
 @app.route("/")
 def index_page():
-    return send_from_directory(BASE_DIR, "index.html")
+    return _file("index.html")
 
 
 @app.route("/api/health")
@@ -129,8 +129,7 @@ def health():
 @app.route("/app.js")
 @app.route("/style.css")
 def serve_static():
-    path = request.path.lstrip("/")
-    return send_from_directory(BASE_DIR, path)
+    return _file(request.path.lstrip("/"))
 
 
 @app.route("/admin")
@@ -138,7 +137,20 @@ def serve_static():
 def admin_page():
     if not check_auth():
         return need_auth()
-    return send_from_directory(BASE_DIR, "admin.html")
+    return _file("admin.html")
+
+
+def _file(path):
+    for d in [BASE_DIR, "/var/task"]:
+        fp = os.path.join(d, path)
+        if os.path.isfile(fp):
+            with open(fp, "rb") as f:
+                body = f.read()
+            ct = "text/html"
+            if path.endswith(".css"): ct = "text/css"
+            elif path.endswith(".js"): ct = "application/javascript"
+            return make_response(body, 200, {"Content-Type": ct + "; charset=utf-8"})
+    return make_response("", 404)
 
 
 # ── Admin API ──
