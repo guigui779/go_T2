@@ -113,21 +113,21 @@ def need_auth():
     return make_response("", 401, {"WWW-Authenticate": 'Basic realm="Go V5"'})
 
 
-# ── 静态文件 ──
+# ── 页面 ──
 @app.route("/")
-@app.route("/index.html")
 def index_page():
     return send_from_directory(BASE_DIR, "index.html")
 
 
-@app.route("/<path:filename>")
-def static_files(filename):
-    if "." in filename and not filename.startswith("api/"):
-        return send_from_directory(BASE_DIR, filename)
-    return make_response("", 404)
+@app.route("/admin.css")
+@app.route("/admin.js")
+@app.route("/app.js")
+@app.route("/style.css")
+def serve_static():
+    path = request.path.lstrip("/")
+    return send_from_directory(BASE_DIR, path)
 
 
-# ── Admin 页面 ──
 @app.route("/admin")
 @app.route("/admin/")
 def admin_page():
