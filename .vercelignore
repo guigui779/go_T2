@@ -1,0 +1,6 @@
+__pycache__
+*.db
+.git
+data.db
+domains.json
+domains.json.bak

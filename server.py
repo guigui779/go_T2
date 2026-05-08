@@ -1,495 +1,307 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Go Page V4 — 域名中继跳转服务
-==============================
-纯 Python HTTP 服务，无第三方依赖。
-
-路由优先级：
-  1. /admin          → 后台管理面板
-  2. /admin/api/*    → 管理 API
-  3. 主域名中继       → 302 到 {label}.{relayDomain}/go
-  4. /go             → 生成 token → 302 到 /?token=xxx
-  5. /api/verify-token → token 验证
-  6. /api/config     → 前端配置
-  7. 静态文件         → index.html / app.js / style.css
-"""
-
-import argparse
+"""Go Page V5 — Flask 版，可部署到 Vercel"""
 import base64
-import copy
 import hashlib
 import hmac
 import json
 import os
 import random
 import string
-import sys
 import time
 import urllib.parse
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
-# ===== 路径 =====
+from flask import Flask, request, jsonify, redirect, send_from_directory, make_response
+
+import db
+
+app = Flask(__name__, static_folder=None)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DOMAINS_FILE = os.path.join(BASE_DIR, "domains.json")
 
-
-# ===== 环境变量 =====
+# ── 环境变量 ──
 ADMIN_USER = os.environ.get("ADMIN_USER", "admin")
 ADMIN_PASS = os.environ.get("ADMIN_PASS", "")
 TOKEN_SECRET = os.environ.get("TOKEN_SECRET", "") or base64.b64encode(os.urandom(32)).decode()
 TOKEN_TTL = int(os.environ.get("TOKEN_TTL", "300"))
 GATE_SECRET = os.environ.get("GATE_SECRET", "") or base64.b64encode(os.urandom(32)).decode()
 
-
-# ===== 默认配置 =====
-DEFAULT_CONFIG = {
-    "version": 1,
-    "updated": "",
-    "siteName": "独立跳转站",
-    "relay": {
-        "mainDomains": [],
-        "relayDomains": [],
-        "labelLength": 4,
-    },
-    "wildcard": {
-        "enabled": True,
-        "baseDomain": "",
-        "candidateCount": 6,
-        "labelLength": 8,
-    },
-    "probeAssets": ["/logo.png"],
-    "probeAssetThreshold": 2,
-    "domains": [],
-}
+CHARS = string.ascii_lowercase + string.digits
 
 
-# ================================================================
-#  域名清洗 — 绝不用 lstrip / rstrip
-# ================================================================
+# ── Token ──
+def _hmac_sign(secret, payload):
+    return hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()[:16]
+
+
+def _make_token(secret):
+    ts = str(int(time.time()))
+    raw = ts + ":" + _hmac_sign(secret, ts)
+    return base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
+
+
+def _check_token(token, secret):
+    try:
+        padding = 4 - len(token) % 4
+        if padding != 4:
+            token += "=" * padding
+        raw = base64.urlsafe_b64decode(token).decode()
+        ts_str, sig = raw.split(":", 1)
+        if abs(time.time() - int(ts_str)) > TOKEN_TTL:
+            return False
+        return hmac.compare_digest(sig, _hmac_sign(secret, ts_str))
+    except Exception:
+        return False
+
+
+def rand_label(n):
+    return "".join(random.choices(CHARS, k=n))
+
+
 def clean_domain(raw):
-    """清洗用户输入的域名：去协议、去 *.、去路径、去端口、小写。"""
     s = str(raw).strip().lower()
-    # 去协议
-    for prefix in ("https://", "http://"):
-        if s.startswith(prefix):
-            s = s[len(prefix):]
-            break
-    # 去路径（取第一个 / 之前）
-    slash = s.find("/")
-    if slash >= 0:
-        s = s[:slash]
-    # 去端口
-    colon = s.rfind(":")
-    if colon >= 0:
-        s = s[:colon]
-    # 去 *. 通配前缀 — 用 startswith 判断，绝不用 lstrip
+    for p in ("https://", "http://"):
+        if s.startswith(p):
+            s = s[len(p):]
+    s = s.split("/")[0].split(":")[0]
     if s.startswith("*."):
         s = s[2:]
     return s.strip()
 
 
-# ================================================================
-#  启动自检 — 失败则 exit(1) 拒绝启动
-# ================================================================
-def run_self_test():
-    tests = [
-        ("*.fook.pro", "fook.pro"),
-        ("https://*.fook.pro/go", "fook.pro"),
-        ("http://fook.pro:8080/path", "fook.pro"),
-        ("  FOOK.PRO  ", "fook.pro"),
-        ("https://example.com/", "example.com"),
-        ("*.sub.domain.com", "sub.domain.com"),
-        ("http://TEST.COM:443/a/b/c", "test.com"),
-        ("fook.pro", "fook.pro"),
-    ]
-    for raw, expected in tests:
-        result = clean_domain(raw)
-        if result != expected:
-            print(f"[SELF-TEST] FAIL: clean_domain({raw!r}) = {result!r}, expected {expected!r}")
-            sys.exit(1)
-
-    # relay URL 构造测试
-    label = "abcd"
-    domain = clean_domain("*.fook.pro")
-    target = f"https://{label}.{domain}/go"
-    if "%2A" in target or "%2a" in target:
-        print(f"[SELF-TEST] FAIL: relay URL contains %2A: {target}")
-        sys.exit(1)
-    if "/go/go" in target:
-        print(f"[SELF-TEST] FAIL: relay URL contains /go/go: {target}")
-        sys.exit(1)
-
-    print("[SELF-TEST] clean_domain: ALL PASSED")
-
-
-# ================================================================
-#  配置读写
-# ================================================================
-def default_config():
-    return copy.deepcopy(DEFAULT_CONFIG)
-
-
-def normalize_config(data):
-    """将任意输入规范化为标准配置格式，所有域名经过 clean_domain。"""
-    cfg = default_config()
-    src = data if isinstance(data, dict) else {}
-
-    cfg["version"] = int(src.get("version", cfg["version"]) or cfg["version"])
-    cfg["updated"] = src.get("updated", cfg["updated"])
-    cfg["siteName"] = src.get("siteName") or cfg["siteName"]
-
-    # relay
-    relay = src.get("relay", {}) or {}
-    cfg["relay"]["mainDomains"] = [
-        clean_domain(d) for d in (relay.get("mainDomains") or []) if str(d).strip()
-    ]
-    cfg["relay"]["relayDomains"] = [
-        clean_domain(d) for d in (relay.get("relayDomains") or []) if str(d).strip()
-    ]
-    cfg["relay"]["labelLength"] = int(relay.get("labelLength", cfg["relay"]["labelLength"]) or cfg["relay"]["labelLength"])
-
-    # wildcard
-    wc = src.get("wildcard", {}) or {}
-    cfg["wildcard"]["enabled"] = bool(wc.get("enabled", cfg["wildcard"]["enabled"]))
-    cfg["wildcard"]["baseDomain"] = clean_domain(wc.get("baseDomain", "") or cfg["wildcard"]["baseDomain"])
-    cfg["wildcard"]["candidateCount"] = int(wc.get("candidateCount", cfg["wildcard"]["candidateCount"]) or cfg["wildcard"]["candidateCount"])
-    cfg["wildcard"]["labelLength"] = int(wc.get("labelLength", cfg["wildcard"]["labelLength"]) or cfg["wildcard"]["labelLength"])
-
-    # probe — 自动纠正反斜杠为正斜杠，确保以 / 开头
-    probe = src.get("probeAssets", cfg["probeAssets"]) or []
-    cleaned_probe = []
-    for p in probe:
+def clean_assets(items):
+    out = []
+    for p in items or []:
         s = str(p).strip().replace("\\", "/")
         if s and not s.startswith("/"):
             s = "/" + s
         if s:
-            cleaned_probe.append(s)
-    cfg["probeAssets"] = cleaned_probe
-    raw_threshold = int(src.get("probeAssetThreshold", cfg["probeAssetThreshold"]) or cfg["probeAssetThreshold"])
-    # 自动钳位：阈值不能超过探测资源数量
-    if cleaned_probe:
-        cfg["probeAssetThreshold"] = max(1, min(raw_threshold, len(cleaned_probe)))
-    else:
-        cfg["probeAssetThreshold"] = raw_threshold
+            out.append(s)
+    return out
 
-    # domains
-    cfg["domains"] = src.get("domains", cfg["domains"]) or []
+
+def build_config():
+    cfg = {}
+    defaults = {"siteName": "独立跳转站", "probeAssetThreshold": 2,
+                "wildcardEnabled": True, "wildcardBaseDomain": "",
+                "wildcardCandidateCount": 6, "wildcardLabelLength": 8,
+                "relayLabelLength": 4, "version": 1}
+    for k in defaults:
+        v = db.get_config(k)
+        cfg[k] = v if v is not None else defaults[k]
+    cfg["probeAssets"] = db.get_config("probeAssets") or ["/logo.png"]
+    cfg["domains"] = db.domain_list(status=1)
+    cfg["mainDomains"] = db.relay_get_by_kind("main")
+    cfg["relayDomains"] = db.relay_get_by_kind("relay")
     return cfg
 
 
-def load_config():
-    if os.path.exists(DOMAINS_FILE):
-        with open(DOMAINS_FILE, "r", encoding="utf-8") as f:
-            return normalize_config(json.load(f))
-    return default_config()
-
-
-def save_config(data):
-    data = normalize_config(data)
-    data["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    data["version"] = data.get("version", 0) + 1
-    with open(DOMAINS_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    return data
-
-
-# ================================================================
-#  Token 工具
-# ================================================================
-def random_label(length):
-    chars = string.ascii_lowercase + string.digits
-    return "".join(random.choices(chars, k=length))
-
-
-def generate_token():
-    ts = str(int(time.time()))
-    sig = hmac.new(TOKEN_SECRET.encode(), ts.encode(), hashlib.sha256).hexdigest()[:16]
-    raw = ts + ":" + sig
-    return base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
-
-
-def verify_token(token_str):
+# ── 认证 ──
+def check_auth():
+    if not ADMIN_PASS:
+        return True
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Basic "):
+        return False
     try:
-        padding = 4 - len(token_str) % 4
-        if padding != 4:
-            token_str += "=" * padding
-        raw = base64.urlsafe_b64decode(token_str).decode()
-        ts_str, sig = raw.split(":", 1)
-        ts = int(ts_str)
-        if abs(time.time() - ts) > TOKEN_TTL:
-            return False
-        expected = hmac.new(TOKEN_SECRET.encode(), ts_str.encode(), hashlib.sha256).hexdigest()[:16]
-        return hmac.compare_digest(sig, expected)
+        u, p = base64.b64decode(auth[6:]).decode().split(":", 1)
+        return u == ADMIN_USER and p == ADMIN_PASS
     except Exception:
         return False
 
 
-def generate_gate_token():
-    ts = str(int(time.time()))
-    sig = hmac.new(GATE_SECRET.encode(), ts.encode(), hashlib.sha256).hexdigest()[:16]
-    raw = ts + ":" + sig
-    return base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
+def need_auth():
+    return make_response("", 401, {"WWW-Authenticate": 'Basic realm="Go V5"'})
 
 
-def verify_gate_token(token_str):
-    try:
-        padding = 4 - len(token_str) % 4
-        if padding != 4:
-            token_str += "=" * padding
-        raw = base64.urlsafe_b64decode(token_str).decode()
-        ts_str, sig = raw.split(":", 1)
-        ts = int(ts_str)
-        if abs(time.time() - ts) > TOKEN_TTL:
-            return False
-        expected = hmac.new(GATE_SECRET.encode(), ts_str.encode(), hashlib.sha256).hexdigest()[:16]
-        return hmac.compare_digest(sig, expected)
-    except Exception:
-        return False
-# ================================================================
-#  Nginx Gate 配置生成
-# ================================================================
-def build_gate_nginx_config(config, site_type="php"):
-    """生成最小化 Gate 505 配置片段，直接粘贴到已有 server 块内。"""
-    probe_assets = config.get("probeAssets", [])
-    whitelist_dirs = set()
-    whitelist_files = set()
-    for path in probe_assets:
-        cleaned = path.strip("/")
-        parts = cleaned.split("/")
-        if len(parts) > 1:
-            whitelist_dirs.add(parts[0])
-        elif cleaned:
-            whitelist_files.add(cleaned)
-
-    is_php = site_type == "php"
-
-    lines = [
-        f"# ===== Gate 505 配置片段 ({time.strftime('%Y-%m-%d %H:%M')}) =====",
-        "# 用法：删除原有的静态资源缓存规则（gif|jpg|…、js|css 那两段），粘贴以下内容",
-        "",
-        "# === 探测资源放行 ===",
-    ]
-    for d in sorted(whitelist_dirs):
-        lines += [f"location /{d}/ {{", "    expires 30d;", "    access_log off;", "}", ""]
-    for f in sorted(whitelist_files):
-        lines.append(f"location = /{f} {{ expires 30d; access_log off; }}")
-    lines += ["location /favicon.ico { access_log off; }", "location /robots.txt  { access_log off; }", ""]
-
-    lines += [
-        "# === Gate cookie ===",
-        "location = /_internal_gate {",
-        "    internal;",
-        '    add_header Set-Cookie "_gate_pass=1; Path=/; Max-Age=86400; HttpOnly" always;',
-        "    return 302 /;",
-        "}",
-        "",
-        "# === 主入口 ===",
-        "location / {",
-        '    set $gate "deny";',
-        '    if ($cookie__gate_pass = "1") { set $gate "allow"; }',
-        '    if ($arg__gate)               { set $gate "new";   }',
-        '    if ($gate = "new")  { rewrite ^ /_internal_gate last; }',
-        '    if ($gate = "deny") { return 505; }',
-        "",
-    ]
-    if is_php:
-        lines += [
-            "    if (!-e $request_filename) {",
-            "        rewrite ^(.*)$ /index.php?s=/$1 last;",
-            "    }",
-        ]
-    else:
-        lines.append("    try_files $uri $uri/ =404;")
-    lines.append("}")
-
-    if is_php:
-        lines += [
-            "",
-            "# === PHP-FPM ===",
-            "location ~ \\.php$ {",
-            "    fastcgi_pass 127.0.0.1:9000;",
-            "    fastcgi_index index.php;",
-            "    fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;",
-            "    include fastcgi_params;",
-            "}",
-        ]
-    return "\n".join(lines)
+# ── 静态文件 ──
+@app.route("/")
+@app.route("/index.html")
+def index_page():
+    return send_from_directory(BASE_DIR, "index.html")
 
 
-# ================================================================
-#  HTTP Handler
-# ================================================================
-class GoPageHandler(SimpleHTTPRequestHandler):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=BASE_DIR, **kwargs)
-
-    # --- 鉴权 ---
-    def check_auth(self):
-        if not ADMIN_PASS:
-            return True
-        auth = self.headers.get("Authorization", "")
-        if not auth.startswith("Basic "):
-            return False
-        try:
-            decoded = base64.b64decode(auth[6:]).decode("utf-8")
-            user, passwd = decoded.split(":", 1)
-            return user == ADMIN_USER and passwd == ADMIN_PASS
-        except Exception:
-            return False
-
-    def require_auth(self):
-        self.send_response(401)
-        self.send_header("WWW-Authenticate", 'Basic realm="Go Page V4"')
-        self.send_header("Content-Length", "0")
-        self.end_headers()
-
-    def send_json(self, data, status=200):
-        body = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-cache, no-store")
-        self.end_headers()
-        self.wfile.write(body)
-
-    def send_redirect(self, url):
-        self.send_response(302)
-        self.send_header("Location", url)
-        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
-        self.end_headers()
-
-    # --- GET ---
-    def do_GET(self):
-        parsed = urllib.parse.urlparse(self.path)
-        path = parsed.path
-        host = (self.headers.get("Host") or "").split(":")[0].lower()
-        config = load_config()
-        relay = config.get("relay", {})
-        main_domains = relay.get("mainDomains", [])
-        relay_domains = relay.get("relayDomains", [])
-        label_len = int(relay.get("labelLength", 4))
-
-        # Priority 1: Admin 页面
-        if path in ("/admin", "/admin/"):
-            if not self.check_auth():
-                return self.require_auth()
-            self.path = "/admin.html"
-            return super().do_GET()
-
-        # Priority 2: Admin API
-        if path == "/admin/api/config":
-            if not self.check_auth():
-                return self.require_auth()
-            return self.send_json(config)
-
-        if path == "/admin/api/generate-gate":
-            if not self.check_auth():
-                return self.require_auth()
-            qs = urllib.parse.parse_qs(parsed.query)
-            site_type = (qs.get("type") or ["php"])[0]
-            if site_type not in ("php", "static"):
-                site_type = "php"
-            text = build_gate_nginx_config(config, site_type=site_type)
-            return self.send_json({"ok": True, "config": text})
-
-        # Priority 3: 主域名中继
-        if host in main_domains and relay_domains and path in ("/", "/index.html", "/go", "/go/"):
-            relay_domain = random.choice(relay_domains)  # 已被 clean_domain 清洗
-            label = random_label(label_len)
-            target = f"https://{label}.{relay_domain}/go"
-            return self.send_redirect(target)
-
-        # Priority 4: /go 入口（host 不在 mainDomains → 是子域名）
-        if path in ("/go", "/go/"):
-            token = generate_token()
-            return self.send_redirect(f"/?token={token}")
-
-        # Priority 5: token 验证
-        if path == "/api/verify-token":
-            qs = urllib.parse.parse_qs(parsed.query)
-            token = (qs.get("token") or [""])[0]
-            if verify_token(token):
-                return self.send_json({"ok": True})
-            else:
-                return self.send_json({"ok": False, "message": "链接已过期或无效"}, status=403)
-
-        # Priority 6: gate token
-        if path == "/api/gate-token":
-            return self.send_json({"token": generate_gate_token()})
-
-        # Priority 7: 前端配置（公开，给 app.js 用）
-        if path == "/api/config":
-            return self.send_json(config)
-
-        # Priority 8: 静态文件
-        if path in ("/", "/index.html"):
-            self.path = "/index.html"
-        return super().do_GET()
-
-    # --- POST ---
-    def do_POST(self):
-        parsed = urllib.parse.urlparse(self.path)
-
-        if parsed.path == "/admin/api/config":
-            if not self.check_auth():
-                return self.require_auth()
-            length = int(self.headers.get("Content-Length", "0") or 0)
-            payload = self.rfile.read(length).decode("utf-8") if length else "{}"
-            try:
-                incoming = json.loads(payload or "{}")
-            except json.JSONDecodeError as exc:
-                return self.send_json({"ok": False, "message": f"JSON 格式错误: {exc}"}, status=400)
-            saved = save_config(incoming)
-            return self.send_json({"ok": True, "message": "配置已保存", "config": saved})
-
-        self.send_error(404, "Not Found")
-
-    def log_message(self, fmt, *args):
-        print(f"[v4] {fmt % args}")
+@app.route("/<path:filename>")
+def static_files(filename):
+    if "." in filename and not filename.startswith("api/"):
+        return send_from_directory(BASE_DIR, filename)
+    return make_response("", 404)
 
 
-# ================================================================
-#  启动
-# ================================================================
-def serve(host=None, port=None):
-    host = host or os.environ.get("HOST", "0.0.0.0")
-    port = port or int(os.environ.get("PORT", "8787"))
-    server = ThreadingHTTPServer((host, port), GoPageHandler)
-    print(f"[OK] Go Page V4 已启动: http://{host}:{port}")
-    print(f"[OK] 管理后台: http://{host}:{port}/admin")
-    print(f"[OK] 落地页: http://{host}:{port}/index.html")
-    print(f"[OK] 中继入口: http://{host}:{port}/go")
-    if ADMIN_PASS:
-        print(f"[OK] 后台鉴权已启用 (用户: {ADMIN_USER})")
-    else:
-        print("[WARN] 未设置 ADMIN_PASS，后台无鉴权保护")
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        print("\n[STOP] 服务已停止")
-    finally:
-        server.server_close()
+# ── Admin 页面 ──
+@app.route("/admin")
+@app.route("/admin/")
+def admin_page():
+    if not check_auth():
+        return need_auth()
+    return send_from_directory(BASE_DIR, "admin.html")
 
 
-def main():
-    # 启动自检
-    run_self_test()
+# ── Admin API ──
+@app.route("/admin/api/config", methods=["GET"])
+def admin_config_get():
+    if not check_auth():
+        return need_auth()
+    return jsonify(build_config())
 
-    parser = argparse.ArgumentParser(description="Go Page V4 — 域名中继跳转服务")
-    sub = parser.add_subparsers(dest="command")
-    p_serve = sub.add_parser("serve-admin", help="启动服务")
-    p_serve.add_argument("--host", default=None)
-    p_serve.add_argument("--port", type=int, default=None)
-    args = parser.parse_args()
 
-    if args.command == "serve-admin":
-        serve(args.host, args.port)
-    elif os.environ.get("PORT") or os.environ.get("RAILWAY_ENVIRONMENT"):
-        serve()
-    else:
-        parser.print_help()
+@app.route("/admin/api/config", methods=["POST"])
+def admin_config_post():
+    if not check_auth():
+        return need_auth()
+    data = request.get_json(force=True, silent=True) or {}
+    for k in ("siteName", "probeAssetThreshold", "wildcardEnabled",
+              "wildcardBaseDomain", "wildcardCandidateCount",
+              "wildcardLabelLength", "relayLabelLength"):
+        if k in data:
+            db.set_config(k, data[k])
+    if "probeAssets" in data:
+        db.set_config("probeAssets", clean_assets(data["probeAssets"]))
+    db.set_config("version", (db.get_config("version") or 0) + 1)
+    return jsonify({"ok": True, "message": "已保存"})
+
+
+@app.route("/admin/api/domains")
+def admin_domains():
+    if not check_auth():
+        return need_auth()
+    s = request.args.get("search", "")
+    t = request.args.get("tag", "")
+    st = request.args.get("status", "")
+    status = int(st) if st else None
+    page = int(request.args.get("page", 1))
+    size = int(request.args.get("size", 50))
+    items = db.domain_list(status=status, search=s, tag=t, offset=(page - 1) * size, limit=size)
+    total = db.domain_count(status=status, search=s, tag=t)
+    return jsonify({"items": items, "total": total, "page": page, "size": size})
+
+
+@app.route("/admin/api/domains/tags")
+def admin_domain_tags():
+    if not check_auth():
+        return need_auth()
+    return jsonify({"tags": db.domain_all_tags()})
+
+
+@app.route("/admin/api/domain", methods=["POST"])
+def admin_domain_crud():
+    if not check_auth():
+        return need_auth()
+    data = request.get_json(force=True, silent=True) or {}
+    action = data.get("action", "")
+    if action == "add":
+        url = clean_domain(data.get("url", ""))
+        if not url:
+            return jsonify({"ok": False, "message": "域名不能为空"}), 400
+        did = db.domain_add(url, data.get("name", url).strip(), data.get("tag", "").strip())
+        return jsonify({"ok": True, "id": did})
+    elif action == "update":
+        if not data.get("id"):
+            return jsonify({"ok": False, "message": "缺少 ID"}), 400
+        upd = {f: data[f] for f in ("url", "name", "tag", "status") if f in data}
+        if "url" in upd:
+            upd["url"] = clean_domain(upd["url"])
+        db.domain_update(data["id"], **upd)
+        return jsonify({"ok": True})
+    elif action == "delete":
+        ids = data.get("ids", [])
+        if ids:
+            db.domain_batch_delete(ids)
+        return jsonify({"ok": True})
+    elif action == "status":
+        ids = data.get("ids", [])
+        if ids:
+            db.domain_batch_status(ids, data.get("status", 1))
+        return jsonify({"ok": True})
+    elif action == "import":
+        lines = data.get("lines", "").strip().split("\n")
+        items = []
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            parts = [p.strip() for p in line.split(",")]
+            u = clean_domain(parts[0])
+            if not u:
+                continue
+            items.append((u, parts[1] if len(parts) > 1 else "", parts[2] if len(parts) > 2 else ""))
+        if items:
+            db.domain_import_batch(items)
+        return jsonify({"ok": True, "count": len(items)})
+    return jsonify({"ok": False, "message": "未知 action"}), 400
+
+
+@app.route("/admin/api/relay", methods=["GET"])
+def admin_relay_get():
+    if not check_auth():
+        return need_auth()
+    return jsonify({"items": db.relay_list()})
+
+
+@app.route("/admin/api/relay", methods=["POST"])
+def admin_relay_post():
+    if not check_auth():
+        return need_auth()
+    data = request.get_json(force=True, silent=True) or {}
+    action = data.get("action", "")
+    if action == "add":
+        d = clean_domain(data.get("domain", ""))
+        k = data.get("kind", "main")
+        if d and k in ("main", "relay"):
+            db.relay_add(d, k)
+        return jsonify({"ok": True})
+    elif action == "delete":
+        db.relay_delete(data.get("id", 0))
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "message": "未知 action"}), 400
+
+
+# ── 中继跳转 ──
+@app.route("/go")
+@app.route("/go/")
+def relay_go():
+    cfg = build_config()
+    host = (request.headers.get("Host") or "").split(":")[0].lower()
+    main_domains = cfg.get("mainDomains", [])
+    relay_domains = cfg.get("relayDomains", [])
+
+    if host in main_domains and relay_domains:
+        rd = random.choice(relay_domains)
+        label = rand_label(cfg.get("relayLabelLength", 4))
+        return redirect(f"https://{label}.{rd}/go", code=302)
+    token = _make_token(TOKEN_SECRET)
+    return redirect(f"/?token={token}", code=302)
+
+
+# ── Public API ──
+@app.route("/api/verify-token")
+def api_verify_token():
+    token = request.args.get("token", "")
+    ok = _check_token(token, TOKEN_SECRET)
+    return jsonify({"ok": ok}), 200 if ok else 403
+
+
+@app.route("/api/gate-token")
+def api_gate_token():
+    return jsonify({"token": _make_token(GATE_SECRET)})
+
+
+@app.route("/api/config")
+def api_config():
+    cfg = build_config()
+    return jsonify({
+        "siteName": cfg.get("siteName"),
+        "probeAssets": cfg.get("probeAssets", []),
+        "probeAssetThreshold": cfg.get("probeAssetThreshold", 2),
+        "domains": cfg.get("domains", []),
+        "wildcard": {
+            "enabled": cfg.get("wildcardEnabled", True),
+            "baseDomain": cfg.get("wildcardBaseDomain", ""),
+            "candidateCount": cfg.get("wildcardCandidateCount", 6),
+            "labelLength": cfg.get("wildcardLabelLength", 8),
+        },
+    })
 
 
 if __name__ == "__main__":
-    main()
+    port = int(os.environ.get("PORT", 8787))
+    app.run(host="0.0.0.0", port=port, debug=True)
