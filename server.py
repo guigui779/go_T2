@@ -119,6 +119,11 @@ def index_page():
     return send_from_directory(BASE_DIR, "index.html")
 
 
+@app.route("/api/health")
+def health():
+    return jsonify({"ok": True, "db": bool(os.environ.get("DATABASE_URL", ""))})
+
+
 @app.route("/admin.css")
 @app.route("/admin.js")
 @app.route("/app.js")

@@ -27,7 +27,9 @@ def _init_store():
 # ═══════════════════════════════════════
 import sqlite3 as _sq
 _sq_conn = None
-_sq_path = os.environ.get("DB_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data.db"))
+_sq_path = os.environ.get("DB_PATH", 
+    "/tmp/data.db" if os.environ.get("VERCEL") else 
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "data.db"))
 
 
 def _sq_connect():
