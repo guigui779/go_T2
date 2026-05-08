@@ -155,7 +155,10 @@ function api(m,p,b){var o={method:m,headers:{}};if(b){o.headers['Content-Type']=
 return fetch('/admin/api/'+p,o).then(function(r){if(r.status==401){alert('请先登录');throw new Error('401')};if(!r.ok)throw new Error(r.status);return r.json()}).catch(function(e){toast('请求失败: '+e.message,0);throw e})}
 
 // tabs
-document.querySelectorAll('[data-t]').forEach(function(a){a.onclick=function(e){e.preventDefault();document.querySelectorAll('[data-t]').forEach(function(x){x.className=x.className.replace(' on','')});this.className+=' on';['domains','relay','settings'].forEach(function(t){$('tab-'+t).classList.toggle('X',t!==this.dataset.t)})}});
+document.querySelectorAll('[data-t]').forEach(function(a){a.onclick=function(e){e.preventDefault();
+document.querySelectorAll('[data-t]').forEach(function(x){x.classList.remove('on')});
+this.classList.add('on');
+var t = this.dataset.t; ['domains','relay','settings'].forEach(function(n){$('tab-'+n).classList.toggle('X', n !== t)})}});
 
 // ---------- 域名 ----------
 function ld(page){
