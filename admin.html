@@ -3,135 +3,256 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Go V5 管理后台</title>
-<link rel="stylesheet" href="/admin.css">
+<title>Go V5</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#0d1117;color:#c9d1d9;font-size:14px}
+.tb{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:#161b22;border-bottom:1px solid #21262d}
+.tb b{color:#58a6ff;font-size:18px}
+.tb a{color:#8b949e;margin-left:20px;text-decoration:none;font-size:13px}.tb a.on{color:#fff;font-weight:600}
+.w{max-width:1000px;margin:0 auto;padding:20px}
+.bar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+.i{border:1px solid #30363d;background:#0d1117;color:#fff;border-radius:6px;padding:6px 10px;font-size:13px;outline:none}
+.i:focus{border-color:#58a6ff}
+.bt{border:none;border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;font-weight:600}
+.bt1{background:#238636;color:#fff}.bt1:hover{background:#2ea043}
+.bt2{background:#21262d;color:#c9d1d9}.bt2:hover{background:#30363d}
+.bt3{background:#3b2020;color:#f85149}.bt3:hover{background:#4b2a2a}
+.bts{padding:4px 10px;font-size:11px}
+table{width:100%;border-collapse:collapse;border:1px solid #21262d;border-radius:6px;overflow:hidden}
+th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #21262d;font-size:13px}
+th{background:#161b22;color:#8b949e;font-weight:600}
+td{color:#c9d1d9;word-break:break-all}
+tr:hover td{background:#1c2128}
+.tag{display:inline-block;background:#1f3a5f;color:#58a6ff;padding:1px 8px;border-radius:10px;font-size:11px}
+.st{font-size:11px;padding:2px 8px;border-radius:10px}.st1{background:#1b3a1b;color:#3fb950}.st0{background:#3b2020;color:#f85149}
+.act{color:#58a6ff;text-decoration:none;margin:0 3px;font-size:12px}
+.act:hover{text-decoration:underline}
+.pg{margin-top:12px;display:flex;gap:4px;align-items:center}
+.pg a{color:#8b949e;padding:4px 10px;border-radius:4px;font-size:12px;text-decoration:none}.pg a:hover,.pg a.on{background:#1f3a5f;color:#58a6ff}
+.card{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:16px 20px;margin-bottom:12px}
+.card h3{font-size:15px;margin-bottom:10px;color:#58a6ff}
+.card label{display:block;font-size:12px;color:#8b949e;margin:8px 0 4px}
+.card input,.card textarea{width:100%;background:#0d1117;border:1px solid #30363d;color:#fff;border-radius:6px;padding:7px 10px;font-size:13px;outline:none;font-family:inherit}
+.card textarea{min-height:60px;resize:vertical}
+.card input:focus,.card textarea:focus{border-color:#58a6ff}
+.lst{list-style:none}.lst li{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid #21262d;font-size:13px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.r2{display:flex;gap:12px;align-items:center}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:99}
+.mod{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:20px;width:90%;max-width:400px}
+.mod h3{margin-bottom:12px;font-size:16px;color:#fff}
+.mod .i{width:100%;margin-bottom:8px}
+.mod .bt{margin-top:8px}
+.msg{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:8px 20px;border-radius:8px;font-size:13px;z-index:999;opacity:0;transition:.3s}
+.msg.v{opacity:1}.msg.ok{background:#1b3a1b;color:#3fb950;border:1px solid #3fb950}.msg.err{background:#3b2020;color:#f85149;border:1px solid #f85149}
+.X{display:none!important}
+@media(max-width:640px){.g2{grid-template-columns:1fr}.tb a{margin-left:10px;font-size:12px}}
+</style>
 </head>
 <body>
 
-<div class="topbar">
-  <span class="logo">Go V5</span>
-  <nav>
-    <a class="tab active" data-tab="domains">域名管理</a>
-    <a class="tab" data-tab="relay">中继配置</a>
-    <a class="tab" data-tab="settings">站点设置</a>
-  </nav>
+<div class="tb">
+  <b>Go V5</b>
+  <div>
+    <a href="#" class="on" data-t="domains">域名</a>
+    <a href="#" data-t="relay">中继</a>
+    <a href="#" data-t="settings">设置</a>
+  </div>
 </div>
 
-<div class="wrap">
+<div class="w">
 
-  <!-- ===== 域名管理 ===== -->
-  <section id="tab-domains" class="tab-content">
-    <!-- 工具栏 -->
-    <div class="toolbar">
-      <div>
-        <input type="text" id="dom_search" placeholder="搜索域名/名称" class="inp" style="width:200px">
-        <select id="dom_tag" class="inp" style="width:120px"><option value="">全部标签</option></select>
-        <button class="btn btn2" id="dom_search_btn">搜索</button>
-      </div>
-      <div>
-        <button class="btn btn1" id="dom_add_btn">+ 添加域名</button>
-        <button class="btn btn2" id="dom_import_btn">批量导入</button>
-        <button class="btn btn3" id="dom_del_sel">删除选中</button>
-      </div>
-    </div>
+<!-- ===== 域名管理 ===== -->
+<div id="tab-domains">
+  <div class="bar">
+    <input class="i" id="s" placeholder="搜索..." style="width:180px">
+    <select class="i" id="tg" style="width:100px"><option value="">全部</option></select>
+    <button class="bt bt2" id="sch">搜索</button>
+    <span style="flex:1"></span>
+    <button class="bt bt1" id="add">+ 添加</button>
+    <button class="bt bt2" id="imp">导入</button>
+    <button class="bt bt3" id="del">删除选中</button>
+  </div>
+  <table><thead><tr>
+    <th style="width:30px"><input type="checkbox" id="all"></th>
+    <th>域名</th><th>名称</th><th>标签</th><th style="width:60px">状态</th><th style="width:80px">操作</th>
+  </tr></thead><tbody></tbody></table>
+  <div class="pg" id="pg"></div>
+</div>
 
-    <!-- 表格 -->
-    <table id="dom_table">
-      <thead>
-        <tr>
-          <th style="width:30px"><input type="checkbox" id="dom_all"></th>
-          <th>域名</th>
-          <th>名称</th>
-          <th>标签</th>
-          <th style="width:60px">状态</th>
-          <th style="width:80px">操作</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-
-    <!-- 分页 -->
-    <div class="pager" id="dom_pager"></div>
-
-    <!-- 导入弹窗 -->
-    <div class="modal X" id="import_modal">
-      <div class="modal-box">
-        <div class="modal-hd">批量导入<span class="modal-close" onclick="H('import_modal')">x</span></div>
-        <textarea id="import_txt" rows="8" placeholder="每行一个：域名,名称,标签&#10;example.com,备用站,us&#10;test.com,测试"></textarea>
-        <button class="btn btn1" id="import_ok">导入</button>
-      </div>
-    </div>
-
-    <!-- 编辑弹窗 -->
-    <div class="modal X" id="edit_modal">
-      <div class="modal-box">
-        <div class="modal-hd"><span id="edit_title">添加域名</span><span class="modal-close" onclick="H('edit_modal')">x</span></div>
-        <input type="hidden" id="edit_id">
-        <label>域名</label><input type="text" id="edit_url" class="inp" placeholder="example.com">
-        <label>名称</label><input type="text" id="edit_name" class="inp" placeholder="备用站">
-        <label>标签</label><input type="text" id="edit_tag" class="inp" placeholder="us">
-        <button class="btn btn1" id="edit_ok">保存</button>
-      </div>
-    </div>
-  </section>
-
-  <!-- ===== 中继配置 ===== -->
-  <section id="tab-relay" class="tab-content X">
-    <div class="grid2">
-      <div class="card">
-        <div class="card-hd">主域名（客户访问入口） <button class="btn btn1 sm" id="relay_main_add">+ 添加</button></div>
-        <ul id="relay_main_list" class="lst"></ul>
-      </div>
-      <div class="card">
-        <div class="card-hd">中继泛域名 <button class="btn btn1 sm" id="relay_relay_add">+ 添加</button></div>
-        <ul id="relay_relay_list" class="lst"></ul>
-      </div>
-    </div>
-    <div class="card" style="margin-top:12px">
-      <label>随机前缀长度</label>
-      <input type="number" id="relay_len" class="inp" style="width:80px" min="2" max="16" value="4">
-      <button class="btn btn1" id="relay_save">保存</button>
-    </div>
-
-    <!-- 添加中继弹窗 -->
-    <div class="modal X" id="relay_modal">
-      <div class="modal-box">
-        <div class="modal-hd">添加域名<span class="modal-close" onclick="H('relay_modal')">x</span></div>
-        <input type="hidden" id="relay_kind">
-        <input type="text" id="relay_domain" class="inp" placeholder="example.com">
-        <button class="btn btn1" id="relay_ok">添加</button>
-      </div>
-    </div>
-  </section>
-
-  <!-- ===== 站点设置 ===== -->
-  <section id="tab-settings" class="tab-content X">
+<!-- ===== 中继 ===== -->
+<div id="tab-relay" class="X">
+  <div class="g2">
     <div class="card">
-      <label>站点名称</label><input type="text" id="set_name" class="inp">
+      <h3>入口域名<span style="font-size:11px;color:#8b949e;font-weight:400"> — 客户访问时从这里跳到中继子域名</span></h3>
+      <ul class="lst" id="rml"></ul>
+      <button class="bt bt1 bts" id="rma" style="margin-top:8px">+ 添加入口</button>
     </div>
     <div class="card">
-      <div class="card-hd">通配落地</div>
-      <label class="sw"><input type="checkbox" id="set_wc"><span></span> 启用</label>
-      <div id="wc_box">
-        <label>基础域名</label><input type="text" id="set_base" class="inp" placeholder="example.com">
-        <div class="row2">
-          <div><label>候选数量</label><input type="number" id="set_cnt" class="inp" style="width:80px" min="1" max="50"></div>
-          <div><label>前缀长度</label><input type="number" id="set_plen" class="inp" style="width:80px" min="3" max="32"></div>
-        </div>
-      </div>
+      <h3>中继泛域名<span style="font-size:11px;color:#8b949e;font-weight:400"> — *.域名 需要 DNS 泛解析</span></h3>
+      <ul class="lst" id="rrl"></ul>
+      <button class="bt bt1 bts" id="rra" style="margin-top:8px">+ 添加泛域名</button>
     </div>
-    <div class="card">
-      <label>探测资源（每行一个）</label>
-      <textarea id="set_assets" rows="4" placeholder="/logo.png"></textarea>
-      <label>命中阈值</label><input type="number" id="set_thr" class="inp" style="width:80px" min="1" max="20">
+  </div>
+  <div class="card">
+    <label>随机子域名长度</label>
+    <div class="r2">
+      <input class="i" id="rl" type="number" min="2" max="16" value="4" style="width:80px">
+      <button class="bt bt1" id="rs">保存</button>
     </div>
-    <button class="btn btn1" id="set_save">保存设置</button>
-  </section>
+  </div>
+</div>
+
+<!-- ===== 设置 ===== -->
+<div id="tab-settings" class="X">
+  <div class="card">
+    <label>站点名称</label><input class="i" id="cn">
+  </div>
+  <div class="card">
+    <h3>落地域名</h3>
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="wc">启用通配模式</label>
+    <label>基础域名</label><input class="i" id="cb" placeholder="example.com">
+    <div class="r2">
+      <div><label>候选数量</label><input class="i" id="cc" type="number" min="1" max="50" style="width:80px"></div>
+      <div><label>子域名长度</label><input class="i" id="cl" type="number" min="3" max="32" style="width:80px"></div>
+    </div>
+  </div>
+  <div class="card">
+    <label>探测资源 — 每行一个，用于检测域名是否存活</label>
+    <textarea id="ca" rows="3" placeholder="/logo.png"></textarea>
+    <label>命中阈值 — 几个资源命中就算域名可用</label>
+    <input class="i" id="ct" type="number" min="1" max="20" style="width:80px">
+  </div>
+  <button class="bt bt1" id="cs">保存设置</button>
+</div>
 
 </div>
 
-<div class="toast X" id="toast"></div>
+<!-- Modal -->
+<div class="modal X" id="md">
+  <div class="mod">
+    <h3 id="mh">添加域名</h3>
+    <input type="hidden" id="mi">
+    <input class="i" id="mu" placeholder="域名 example.com">
+    <input class="i" id="mn" placeholder="名称（可选）">
+    <input class="i" id="mt" placeholder="标签（可选）">
+    <div style="display:flex;gap:8px">
+      <button class="bt bt1" id="mk">保存</button>
+      <button class="bt bt2" id="mc">取消</button>
+    </div>
+  </div>
+</div>
 
-<script src="/admin.js"></script>
+<div class="msg X" id="mg"></div>
+
+<script>
+var page=1,size=50;
+function $(id){return document.getElementById(id)}
+function toast(t,ok){var m=$('mg');m.textContent=t;m.className='msg ok';if(!ok)m.className='msg err';m.classList.add('v');setTimeout(function(){m.classList.remove('v')},2000)}
+function esc(s){var d=document.createElement('div');d.textContent=s||'';return d.innerHTML}
+function api(m,p,b){var o={method:m,headers:{}};if(b){o.headers['Content-Type']='application/json';o.body=JSON.stringify(b)}
+return fetch('/admin/api/'+p,o).then(function(r){if(r.status==401)throw new Error('need login');return r.json()})}
+
+// tabs
+document.querySelectorAll('[data-t]').forEach(function(a){a.onclick=function(e){e.preventDefault();document.querySelectorAll('[data-t]').forEach(function(x){x.className=x.className.replace(' on','')});this.className+=' on';['domains','relay','settings'].forEach(function(t){$('tab-'+t).classList.toggle('X',t!==this.dataset.t)})}});
+
+// ---------- 域名 ----------
+function ld(page){
+  page=page||1;
+  var q='page='+page+'&size='+size+'&search='+encodeURIComponent($('s').value)+'&tag='+encodeURIComponent($('tg').value);
+  api('GET','domains?'+q).then(function(d){
+    var t=document.querySelector('#tab-domains tbody');t.innerHTML='';
+    d.items.forEach(function(x){
+      t.innerHTML+='<tr><td><input type="checkbox" value="'+x.id+'"></td>'+
+      '<td>'+esc(x.url)+'</td><td>'+esc(x.name)+'</td>'+
+      '<td>'+(x.tag?'<span class="tag">'+esc(x.tag)+'</span>':'')+'</td>'+
+      '<td><span class="st st'+(x.status==1?1:0)+'">'+(x.status==1?'启用':'停用')+'</span></td>'+
+      '<td><a href="#" class="act e" data-id="'+x.id+'">编辑</a> <a href="#" class="act t" data-id="'+x.id+'">'+(x.status==1?'停用':'启用')+'</a></td></tr>'
+    });
+    var p=$('pg');p.innerHTML='';var total=Math.ceil((d.total||0)/size);
+    if(total>1){for(var i=1;i<=total;i++)p.innerHTML+='<a href="#" data-p="'+i+'"'+(i==page?' class="on"':'')+'>'+i+'</a>'}
+    bind();
+  });
+}
+function bind(){
+  document.querySelectorAll('.pg a').forEach(function(a){a.onclick=function(e){e.preventDefault();ld(parseInt(this.dataset.p))}});
+  document.querySelectorAll('.act.e').forEach(function(a){a.onclick=function(e){e.preventDefault();edit(this.dataset.id)}});
+  document.querySelectorAll('.act.t').forEach(function(a){a.onclick=function(e){e.preventDefault();toggle(this.dataset.id)}});
+}
+$('sch').onclick=function(){ld(1)};$('s').onkeydown=function(e){if(e.key=='Enter')ld(1)};
+$('all').onclick=function(){document.querySelectorAll('#tab-domains tbody input[type=checkbox]').forEach(function(c){c.checked=this.checked})};
+$('del').onclick=function(){
+  var ids=[];document.querySelectorAll('#tab-domains tbody input:checked').forEach(function(c){ids.push(parseInt(c.value))});
+  if(!ids.length)return toast('请勾选域名',0);
+  api('POST','domain',{action:'delete',ids:ids}).then(function(){toast('已删除',1);ld()})
+};
+
+function toggle(id){
+  api('GET','domains?size=200').then(function(d){var x=(d.items||[]).filter(function(i){return i.id==id})[0];
+    if(x)api('POST','domain',{action:'status',ids:[id],status:x.status==1?0:1}).then(function(){toast('已'+(x.status==1?'停用':'启用'),1);ld()})
+  })
+}
+function edit(id){
+  if(id){api('GET','domains?size=200').then(function(d){var x=(d.items||[]).filter(function(i){return i.id==id})[0];
+    if(x){$('mh').textContent='编辑';$('mi').value=x.id;$('mu').value=x.url;$('mn').value=x.name||'';$('mt').value=x.tag||'';showMd()}})
+  }else{$('mh').textContent='添加域名';$('mi').value='';$('mu').value='';$('mn').value='';$('mt').value='';showMd()}
+}
+function showMd(){$('md').classList.remove('X')}
+$('add').onclick=function(){edit()};
+$('mc').onclick=function(){$('md').classList.add('X')};
+$('mk').onclick=function(){
+  var d={url:$('mu').value.trim(),name:$('mn').value.trim(),tag:$('mt').value.trim()};
+  var id=$('mi').value;
+  if(id){d.action='update';d.id=parseInt(id)}else d.action='add';
+  api('POST','domain',d).then(function(r){if(r.ok){$('md').classList.add('X');toast('已保存',1);ld();loadTags()}else toast(r.message,0)})
+};
+$('imp').onclick=function(){
+  var t=prompt('每行一个：域名,名称,标签\n\nexample.com,备用站,us\ntest.com,测试','');
+  if(t){api('POST','domain',{action:'import',lines:t}).then(function(r){if(r.ok){toast('导入 '+r.count+' 条',1);ld();loadTags()}else toast(r.message,0)})}
+};
+
+// tags
+function loadTags(){api('GET','domains/tags').then(function(d){var s=$('tg');s.innerHTML='<option value="">全部</option>';d.tags.forEach(function(t){s.innerHTML+='<option>'+t+'</option>'})})}
+
+// ---------- 中继 ----------
+function lr(){
+  api('GET','relay').then(function(d){
+    var m=d.items.filter(function(x){return x.kind=='main'}),r=d.items.filter(function(x){return x.kind=='relay'});
+    $('rml').innerHTML=m.map(function(x){return'<li>'+esc(x.domain)+' <a href="#" class="act del" data-id="'+x.id+'">删除</a></li>'}).join('');
+    $('rrl').innerHTML=r.map(function(x){return'<li>'+esc(x.domain)+' <a href="#" class="act del" data-id="'+x.id+'">删除</a></li>'}).join('');
+    document.querySelectorAll('.act.del').forEach(function(a){a.onclick=function(e){e.preventDefault();api('POST','relay',{action:'delete',id:parseInt(this.dataset.id)}).then(function(){toast('已删除',1);lr()})}})
+  })
+}
+function radd(k){var d=prompt('输入域名：','');if(d){api('POST','relay',{action:'add',domain:d,kind:k}).then(function(r){if(r.ok){toast('已添加',1);lr()}})}}
+$('rma').onclick=function(){radd('main')};$('rra').onclick=function(){radd('relay')};
+$('rs').onclick=function(){api('POST','config',{relayLabelLength:parseInt($('rl').value)||4}).then(function(){toast('已保存',1)})};
+
+// ---------- 设置 ----------
+function ls(){
+  api('GET','config').then(function(cfg){
+    $('cn').value=cfg.siteName||'';
+    $('wc').checked=cfg.wildcardEnabled!==false;
+    $('cb').value=cfg.wildcardBaseDomain||'';
+    $('cc').value=cfg.wildcardCandidateCount||6;
+    $('cl').value=cfg.wildcardLabelLength||8;
+    $('ca').value=(cfg.probeAssets||[]).join('\n');
+    $('ct').value=cfg.probeAssetThreshold||2;
+    $('rl').value=cfg.relayLabelLength||4;
+  })
+}
+$('cs').onclick=function(){
+  api('POST','config',{
+    siteName:$('cn').value.trim(),wildcardEnabled:$('wc').checked,
+    wildcardBaseDomain:$('cb').value.trim(),wildcardCandidateCount:parseInt($('cc').value)||6,
+    wildcardLabelLength:parseInt($('cl').value)||8,
+    probeAssetThreshold:parseInt($('ct').value)||2,
+    probeAssets:$('ca').value.split('\n').map(function(s){return s.trim()}).filter(Boolean)
+  }).then(function(){toast('已保存',1)})
+};
+
+// init
+ld();loadTags();lr();ls();
+</script>
 </body>
 </html>
