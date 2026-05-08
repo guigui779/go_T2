@@ -50,15 +50,18 @@ def _sq_init():
 
 
 # ═══════════════════════════════════════
-#  PostgreSQL — Vercel 生产
+#  PostgreSQL — Vercel 生产（按需加载）
 # ═══════════════════════════════════════
-import psycopg2 as _pg
-import psycopg2.extras as _pgx
 _pg_conn = None
-
+_pg = None
+_pgx = None
 
 def _pg_connect(url):
-    global _pg_conn
+    global _pg, _pgx, _pg_conn
+    import psycopg2 as _pg_mod
+    import psycopg2.extras as _pgx_mod
+    _pg = _pg_mod
+    _pgx = _pgx_mod
     _pg_conn = _pg.connect(url)
 
 
