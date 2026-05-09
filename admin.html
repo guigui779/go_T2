@@ -152,7 +152,7 @@ function $(id){return document.getElementById(id)}
 function toast(t,ok){var m=$('mg');m.textContent=t;m.className='msg ok';if(!ok)m.className='msg err';m.classList.add('v');setTimeout(function(){m.classList.remove('v')},2000)}
 function esc(s){var d=document.createElement('div');d.textContent=s||'';return d.innerHTML}
 function api(m,p,b){var o={method:m,headers:{}};if(b){o.headers['Content-Type']='application/json';o.body=JSON.stringify(b)}
-return fetch('/admin/api/'+p,o).then(function(r){if(r.status==401){alert('请先登录');throw new Error('401')};if(!r.ok)throw new Error(r.status);return r.json()}).catch(function(e){toast('请求失败: '+e.message,0);throw e})}
+return fetch('/admin/api/'+p,o).then(function(r){if(r.status==401){alert('请先登录');throw new Error('401')};if(!r.ok)throw new Error(r.status);return r.json()}).catch(function(e){toast('请求失败: '+e.message,0);return Promise.resolve(null)})}
 
 // tabs
 document.querySelectorAll('[data-t]').forEach(function(a){a.onclick=function(e){e.preventDefault();

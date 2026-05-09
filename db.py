@@ -86,23 +86,12 @@ def _pg_init():
 # ═══════════════════════════════════════
 def _ensure_defaults():
     defaults = {
-        "siteName": "独立跳转站", "probeAssets": json.dumps(["/logo.png"]),
-        "probeAssetThreshold": "2", "wildcardEnabled": "true",
-        "wildcardBaseDomain": "", "wildcardCandidateCount": "6",
-        "wildcardLabelLength": "8", "relayLabelLength": "4", "version": "1"
-    }
-    for k, v in defaults.items():
-        if get_config(k) is None:
-            set_config(k, json.loads(v) if v in ("true",) else v if isinstance(v, str) and v.startswith("[") else v)
-            # simpler: just store string
-    # re-do properly
-    defaults2 = {
         "siteName": "独立跳转站", "probeAssets": ["/logo.png"],
         "probeAssetThreshold": 2, "wildcardEnabled": True,
         "wildcardBaseDomain": "", "wildcardCandidateCount": 6,
         "wildcardLabelLength": 8, "relayLabelLength": 4, "version": 1
     }
-    for k, v in defaults2.items():
+    for k, v in defaults.items():
         if get_config(k) is None:
             set_config(k, v)
 
