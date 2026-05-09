@@ -211,6 +211,7 @@ class Handler(SimpleHTTPRequestHandler):
         if path in ("/go","/go/"): return self._redir(f"/?token={make_token(TOKEN_SECRET)}")
 
         # public api
+        if path=="/api/health": return self._json({"ok":True})
         if path=="/api/verify-token":
             ok=check_token((q.get("token") or [""])[0], TOKEN_SECRET)
             return self._json({"ok":ok},200 if ok else 403)
