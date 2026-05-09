@@ -277,9 +277,11 @@ class Handler(SimpleHTTPRequestHandler):
         print(f"[go] {fmt % args}")
 
 if __name__=="__main__":
-    port=int(os.environ.get("PORT",8788))
-    host=os.environ.get("HOST","0.0.0.0")
-    srv=ThreadingHTTPServer((host,port),Handler)
-    print(f">>> http://{host}:{port}")
+    import sys
+    port = int(os.environ.get("PORT", 8788))
+    host = "0.0.0.0"
+    srv = ThreadingHTTPServer((host, port), Handler)
+    print(f">>> STARTED on {host}:{port}", flush=True)
+    sys.stdout.flush()
     try: srv.serve_forever()
     except KeyboardInterrupt: srv.server_close()
