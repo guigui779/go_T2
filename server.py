@@ -56,7 +56,7 @@ _db = None
 def _db_conn():
     global _db
     if _db is None:
-        path = os.environ.get("DB_PATH", os.path.join(BASE_DIR, "data.db"))
+        path = os.environ.get("DB_PATH", "/tmp/data.db")
         _db = _sq.connect(path, check_same_thread=False)
         _db.row_factory = _sq.Row
         _db.executescript("""
